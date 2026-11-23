@@ -139,12 +139,21 @@ pub fn links_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
                             ),
                             None => name,
                         }
+                        .on_hover_text(crate::i18n::tr(&app.ui.language, "Double-click to open the file in its default application"))
                     })
                     .inner
                 })
                 .inner;
             if response.clicked() {
                 chosen = Some(aid);
+            }
+            // A double-click opens the file the way the Finder would: the default application for it.
+            #[cfg(not(target_arch = "wasm32"))]
+            if response.double_clicked()
+                && let Some(path) = r["path"].as_str().filter(|path| !path.is_empty())
+                && let Err(e) = open_default(path)
+            {
+                app.status_error("Open", e.to_string());
             }
             let (txt, col) = match r["status"].as_str().unwrap_or("") {
                 "missing" => ("\u{26A0} Missing", egui::Color32::from_rgb(0xe5, 0x4b, 0x4b)),
@@ -302,6 +311,20 @@ pub fn links_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
 
 /// Thumbnail edge in the Links panel, in points.
 const THUMB: f32 = 28.0;
+
+/// Opens a file the way the operating system's file manager would on a double-click: the
+/// application the user has made the default for it. The call doesn't wait for the application.
+#[cfg(not(target_arch = "wasm32"))]
+fn open_default(path: &str) -> Result<(), std::io::Error> {
+    let (program, arg) = if cfg!(target_os = "macos") {
+        ("open", path)
+    } else if cfg!(target_os = "windows") {
+        ("explorer", path)
+    } else {
+        ("xdg-open", path)
+    };
+    std::process::Command::new(program).arg(arg).spawn().map(|_| ())
+}
 /// A row's height: the name and the path under it, with room around both.
 const ROW_H: f32 = 46.0;
 /// The fixed footer's room: the source path, the row's actions and Relink to Folder.
