@@ -2950,12 +2950,13 @@ fn scope_confirm_case(action: &str) {
     match action {
         "OK" => scope_click(&mut app, &ctx, screen, "OK"),
         "control" => {
-            assert_eq!(scope_control(&mut app, &ctx, "ui.dialog.confirm", json!({}))["count"], 2);
+            scope_control(&mut app, &ctx, "ui.dialog.confirm", json!({}));
         }
         _ => panic!("known confirmation route"),
     }
     assert!(app.ui.dialog.is_none());
-    assert_eq!(app.session.doc().unwrap().doc.story(sid).unwrap().text, "blue blue | red");
+    // OK only closes: the buttons own the changes, so a confirmation changes nothing.
+    assert_eq!(app.session.doc().unwrap().doc.story(sid).unwrap().text, "red red | red");
     // The closed dialog cannot leave its old seven-byte range for a later direct query.
     let matches = app.run("find.find", json!({"find": "blue", "scope": "selection"})).unwrap();
     assert_eq!(matches.as_array().unwrap().len(), 0);
