@@ -1111,7 +1111,10 @@ fn open_window_drops(app: &mut DesignApp, windows: &[craft_ui::docking::WindowFi
 /// Whether a modal (a dialog, About or Quick Apply) is open. Floating panels in their own OS
 /// windows take no input then, as the main window behind the modal doesn't.
 pub(crate) fn modal_open(app: &DesignApp) -> bool {
-    app.ui.dialog.is_some() || app.ui.about || app.ui.palette.is_some()
+    // Find/Change floats, so it does not block the panels behind it.
+    (app.ui.dialog.is_some() && !app.ui.dialog.as_ref().is_some_and(|d| d.id == "findChange"))
+        || app.ui.about
+        || app.ui.palette.is_some()
 }
 
 /// What the control channel reports: the layout in use (craft-ui's serialized `Layout`),

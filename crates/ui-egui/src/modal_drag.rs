@@ -5,7 +5,7 @@
 //! changed size, starts centred. An undragged modal keeps egui's constraint to the window; a
 //! dragged one may go partly off-screen, but its title row stays reachable.
 
-use egui::{Align2, Context, CursorIcon, Id, Modal, Rect, Sense, Ui, Vec2, vec2};
+use egui::{Align2, Area, Context, CursorIcon, Id, Modal, Order, Rect, Sense, Ui, Vec2, vec2};
 
 /// How much of the title row's width stays inside the window.
 const KEEP_VISIBLE: f32 = 100.0;
@@ -45,6 +45,32 @@ pub(crate) fn modal(ctx: &Context, area: Id, instance: Id) -> Modal {
     // Dragged: `clamp` keeps the title row reachable instead of egui keeping the whole modal inside.
     let constrained = offset == Vec2::ZERO;
     Modal::new(area).area(Modal::default_area(area).anchor(Align2::CENTER_CENTER, offset).constrain(constrained))
+}
+
+/// A non-modal floating dialog (Find/Change) with the same centred placement and drag as [`modal`],
+/// but no backdrop: the page and the panels behind it keep their input while it stays open.
+pub(crate) fn floating(ctx: &Context, area: Id, instance: Id) -> Area {
+    let pass = ctx.cumulative_pass_nr();
+    let size = ctx.memory(|m| m.area_rect(area)).map(|r| r.size());
+    let content = ctx.content_rect();
+    let offset = ctx.data_mut(|d| {
+        let p = d.get_temp_mut_or_default::<Placement>(instance);
+        if p.pass.saturating_add(1) < pass || p.content != content.size() {
+            *p = Placement { content: content.size(), ..Placement::default() };
+        }
+        p.pass = pass;
+        if let Some(size) = size
+            && p.offset != Vec2::ZERO
+        {
+            p.offset = clamp(p.offset, size, p.title_height, content);
+        }
+        p.offset
+    });
+    Area::new(area)
+        .order(Order::Foreground)
+        .anchor(Align2::CENTER_CENTER, offset)
+        .interactable(true)
+        .sense(Sense::hover())
 }
 
 /// Makes `rect`, the modal's title row, drag the modal opened with [`modal`] for `instance`.

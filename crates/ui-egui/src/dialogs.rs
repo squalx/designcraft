@@ -3348,7 +3348,9 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
     // No dimmed backdrop: the page behind a dialog is what its settings and colours are judged against.
     let host = egui::Id::unique("dialog");
     let instance = host.with(&d.id);
-    crate::modal_drag::modal(ctx, host, instance).backdrop_color(egui::Color32::TRANSPARENT).show(ctx, |ui| {
+    // Find/Change floats: no backdrop, so the page behind it keeps its input while it stays open.
+    let floats = d.id == "findChange";
+    let draw = |ui: &mut egui::Ui| {
         let frame_margin = egui::Frame::popup(ui.style()).total_margin().sum();
         let available = (ctx.content_rect().size() - frame_margin - egui::vec2(16.0, 16.0)).max(egui::Vec2::splat(1.0));
         let preferred_width: f32 = match d.id.as_str() {
@@ -4274,7 +4276,14 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                 }
             });
         });
-    });
+    };
+    if floats {
+        crate::modal_drag::floating(ctx, host, instance).show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, draw);
+        });
+    } else {
+        crate::modal_drag::modal(ctx, host, instance).backdrop_color(egui::Color32::TRANSPARENT).show(ctx, draw);
+    }
     // Show on an import warning: close the warnings (the status line keeps them) and select the
     // frame the warning is about, in view, so it can be fixed.
     if let Some(item) = d.fields.remove("show").and_then(|v| v.as_u64()) {
