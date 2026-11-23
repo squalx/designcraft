@@ -195,16 +195,23 @@ fn refresh_after(took: Duration) -> Duration {
 fn with_statuses(document: &[Value], checked: Option<&[Value]>) -> Vec<Value> {
     let Some(checked) = checked else { return document.to_vec() };
     let link = |row: &Value| (row["asset"].as_u64(), row["story"].as_u64(), row["path"].as_str().map(str::to_owned));
-    let found: HashMap<_, &Value> = checked.iter().map(|row| (link(row), &row["status"])).collect();
+    let found: HashMap<_, &Value> = checked.iter().map(|row| (link(row), row)).collect();
     document
         .iter()
         .map(|row| {
             let mut row = row.clone();
             if row["status"] == "checking"
-                && let Some(status) = found.get(&link(&row))
-                && let Some(fields) = row.as_object_mut()
+                && let Some(checked) = found.get(&link(&row))
             {
-                fields.insert("status".into(), (*status).clone());
+                // The header of a linked raster file is read on the worker thread: a preview row
+                // has no colour of its own yet.
+                let color = row.get("color").filter(|c| c.is_null()).and_then(|_| checked.get("color")).filter(|c| !c.is_null()).cloned();
+                if let Some(fields) = row.as_object_mut() {
+                    fields.insert("status".into(), checked["status"].clone());
+                    if let Some(color) = color {
+                        fields.insert("color".into(), color);
+                    }
+                }
             }
             row
         })

@@ -82,9 +82,31 @@ pub fn links_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
     }
     let sel_key = egui::Id::unique("links_panel_sel");
     let mut chosen: Option<u64> = ui.data(|d| d.get_temp(sel_key));
+    // Selecting a graphic on the page selects its row: the actions below then act on it. Only a
+    // changed selection moves the choice, so a row clicked in the panel keeps it afterwards.
+    let mut sel_ids: Vec<u64> = app.session.active().map(|st| st.selection.items.iter().map(|id| id.0).collect()).unwrap_or_default();
+    sel_ids.sort_unstable();
+    let sel_sig_key = egui::Id::unique("links_panel_sel_ids");
+    let selection_changed = ui.data(|d| d.get_temp::<Vec<u64>>(sel_sig_key)) != Some(sel_ids.clone());
+    if selection_changed && !sel_ids.is_empty() {
+        for r in rows.iter() {
+            let used = r["uses"].as_array().cloned().unwrap_or_default().iter().any(|u| u["id"].as_u64().is_some_and(|id| sel_ids.binary_search(&id).is_ok()));
+            if used {
+                chosen = Some(r["asset"].as_u64().or_else(|| r["story"].as_u64()).unwrap_or(0));
+                break;
+            }
+        }
+    }
     // Leave room for Status and Page/PPI instead of widening the grid for long source paths.
-    let name_width = (ui.available_width() - 160.0).max(50.0);
-    egui::Grid::new("links_grid").num_columns(3).striped(true).spacing([10.0, 4.0]).show(ui, |ui| {
+    let name_width = (ui.available_width() - 200.0).max(50.0);
+    // The rows scroll; the actions below stay in view. The scrolling part gives back the room
+    // the rows don't need.
+    egui::ScrollArea::vertical()
+        .id_salt("links_rows")
+        .max_height((ui.available_height() - FOOTER_H).max(2.0 * ROW_H))
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+        egui::Grid::new("links_grid").num_columns(3).striped(true).spacing([10.0, 6.0]).show(ui, |ui| {
         crate::rtl::label(ui, egui::RichText::new(crate::i18n::tr(&app.ui.language, "Name")).color(t.text_dim).size(11.0));
         crate::rtl::label(ui, egui::RichText::new(crate::i18n::tr(&app.ui.language, "Status")).color(t.text_dim).size(11.0));
         crate::rtl::label(ui, egui::RichText::new(crate::i18n::tr(&app.ui.language, "Page · PPI")).color(t.text_dim).size(11.0));
@@ -97,6 +119,8 @@ pub fn links_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
             let thumb = if r["story"].is_null() { app.session.active().and_then(|st| proxy_thumb(ui.ctx(), st.uid, &st.doc, aid)) } else { None };
             let response = ui
                 .horizontal(|ui| {
+                    // Two lines of name and path in every row, whatever the thumbnail's height.
+                    ui.set_min_height(ROW_H);
                     if let Some(tex) = &thumb {
                         ui.add(egui::Image::new(tex).fit_to_exact_size(vec2(THUMB, THUMB)));
                     }
@@ -135,7 +159,12 @@ pub fn links_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
                     if !storage.is_empty() {
                         storage_icon(ui, storage == "linked", t.text_dim, &app.ui.language);
                     }
-                    badge(ui, crate::i18n::tr(&app.ui.language, txt), col)
+                    let mut status = badge(ui, crate::i18n::tr(&app.ui.language, txt), col);
+                    // The colour model the file's own header reports (a placed PDF or SVG has none).
+                    if let Some(c) = r["color"].as_str() {
+                        status = status.union(badge(ui, crate::i18n::tr(&app.ui.language, c), t.text_dim));
+                    }
+                    status
                 })
                 .inner;
             // Why a link isn't followed (a path on another computer, a device).
@@ -160,10 +189,12 @@ pub fn links_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
             );
             ui.end_row();
         }
+        });
     });
     if let Some(c) = chosen {
         ui.data_mut(|d| d.insert_temp(sel_key, c));
     }
+    ui.data_mut(|d| d.insert_temp(sel_sig_key, sel_ids));
     ui.add_space(6.0);
     if let Some(path) = rows
         .iter()
@@ -271,6 +302,10 @@ pub fn links_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
 
 /// Thumbnail edge in the Links panel, in points.
 const THUMB: f32 = 28.0;
+/// A row's height: the name and the path under it, with room around both.
+const ROW_H: f32 = 46.0;
+/// The fixed footer's room: the source path, the row's actions and Relink to Folder.
+const FOOTER_H: f32 = 96.0;
 
 /// A small rounded label in the status colour.
 fn badge(ui: &mut egui::Ui, text: &str, color: egui::Color32) -> egui::Response {

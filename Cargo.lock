@@ -1894,6 +1894,7 @@ dependencies = [
  "craft-csv",
  "craft-docpath",
  "craft-file-formats",
+ "craft-image-codecs",
  "craft-indd",
  "craft-mime",
  "craft-prepress",

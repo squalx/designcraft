@@ -266,11 +266,13 @@ fn links_panel_keeps_long_source_paths_inside_a_narrow_panel() {
     let path = "/project/assets/studio-a/very-long-folder-name/another-long-folder-name/photo.svg";
     let (app, _, _) = linked_graphics(&[Some(path)]);
     let mut h = links_harness(app, 240.0);
-    let source = h.get_by_label(path).rect();
+    // Selecting the graphic on the page selects its row: the path shows in the row (truncated to
+    // its column) and in the footer below (wrapped in full). The row's copy comes first.
+    let source = h.get_all_by_label(path).next().unwrap().rect();
     assert!(source.width() < 150.0, "the source is truncated to its column: {source:?}");
     assert!(source.right() <= 240.0, "the source stays inside the narrow panel: {source:?}");
     assert!(h.get_by_label("Page · PPI").rect().right() <= 240.0);
-    h.get_by_label(path).click();
+    h.get_all_by_label(path).next().unwrap().click();
     h.run_steps(3);
     assert!(h.output().shapes.iter().any(|s| matches!(&s.shape, egui::Shape::Text(text) if text.galley.job.text == path && !text.galley.elided && text.visual_bounding_rect().right() <= 240.0)), "the selected path is painted in full and wraps inside the panel");
 }
