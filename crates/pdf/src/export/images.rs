@@ -252,6 +252,7 @@ mod image_content_cache_tests {
             fonts: HashMap::new(),
             reverse_cmaps: HashMap::new(),
             rgb_only: false,
+        to_cmyk: false,
             tags: Vec::new(),
             story_tags: HashMap::new(),
             tag_story: None,

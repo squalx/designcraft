@@ -55,6 +55,7 @@ impl Dialog {
                     "preset": "Desktop Printing",
                     "standard": "none",
                     "compressImages": false,
+                    "cmykProfile": "",
                     "flatten": "",
                     "spreads": false,
                     "bleed": true,
@@ -798,6 +799,11 @@ pub fn open_pdf_export(app: &mut DesignApp) {
         if app.ui.pdf_export.flatten.is_empty() {
             m.insert("flatten".into(), json!(app.ui.flattener));
         }
+        // An empty profile means the colour settings' CMYK space; the dialog shows that one.
+        let cmyk = m.get("cmykProfile").and_then(Value::as_str).unwrap_or_default();
+        if cmyk.is_empty() {
+            m.insert("cmykProfile".into(), json!(designcraft_color::cms::active_settings().cmyk));
+        }
     }
     app.ui.dialog = Some(Dialog::new("pdfExport", fields));
 }
@@ -983,6 +989,10 @@ fn pdf_export_params(d: &Dialog) -> Value {
     if !flatten.is_empty() {
         params["flatten"] = json!(flatten);
     }
+    let cmyk = d.s("cmykProfile");
+    if !cmyk.is_empty() && cmyk != designcraft_color::cms::active_settings().cmyk {
+        params["cmykProfile"] = json!(cmyk);
+    }
     params
 }
 
@@ -1094,6 +1104,29 @@ fn pdf_export(app: &crate::DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
         crate::rtl::label(ui, crate::i18n::tr(lang, "Standard:"));
         translated_combo(lang, ui, d, "standard", &[("none", "None"), ("x1a", "PDF/X-1a:2003"), ("x4", "PDF/X-4"), ("a2b", "PDF/A-2b")]);
     });
+    // The CMYK space the export works in and a PDF/X file names in its output intent: the print
+    // buyer's standard profile, not a private one. An .icc can be added in Color Settings.
+    if matches!(d.s("standard").as_str(), "x1a" | "x4") {
+        ui.horizontal(|ui| {
+            crate::rtl::label(ui, crate::i18n::tr(lang, "CMYK Profile:"));
+            let cur = match d.s("cmykProfile") {
+                s if s.is_empty() => designcraft_color::cms::active_settings().cmyk,
+                s => s,
+            };
+            let profiles = designcraft_color::cms::profiles();
+            let mut chosen = cur.clone();
+            craft_ui::ComboBox::from_id_salt("pdf_cmyk_profile").selected_text(crate::rtl::widget(ui, crate::i18n::tr(lang, &cur))).width(320.0).show_ui(ui, |ui| {
+                for p in profiles.iter().filter(|p| p.kind == designcraft_color::cms::ProfileKind::Cmyk) {
+                    if ui.selectable_label(cur == p.name, crate::rtl::widget(ui, crate::i18n::tr(lang, &p.name))).clicked() {
+                        chosen = p.name.clone();
+                    }
+                }
+            });
+            if chosen != cur {
+                d.fields.insert("cmykProfile".into(), json!(chosen));
+            }
+        });
+    }
     // Spreads with transparency are rasterized at the preset's resolution; in PDF/X-1a it is the
     // resolution craft-prepress rasterizes complex transparent regions at.
     head(ui, "Transparency Flattener");
@@ -5402,6 +5435,7 @@ fn confirm_part3(app: &mut DesignApp, d: Dialog) -> Result<Value, String> {
             app.ui.pdf_export.marks_weight = d.s("marksWeight");
             app.ui.pdf_export.marks_offset = d.s("marksOffset");
             app.ui.pdf_export.tagged = d.b("tagged");
+            app.ui.pdf_export.cmyk_profile = d.s("cmykProfile");
 
             let mut params = pdf_export_params(&d);
             let pages = d.s("pages");

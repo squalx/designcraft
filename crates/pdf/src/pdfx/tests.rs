@@ -164,14 +164,19 @@ fn cmyk_grey_and_icc_rgb_pass() {
     assert!(r.warnings.is_empty(), "{:?}", r.warnings);
 }
 
-/// RGB swatches paint in DeviceRGB.
+/// RGB swatches print as the working CMYK's inks under a CMYK output intent, so the file has no
+/// stray RGB fill for the preflight to flag.
 #[test]
-fn device_rgb_fills_are_flagged() {
+fn device_rgb_fills_are_converted_to_cmyk() {
     let mut d = Document::new(&NewDocument { pages: 2, ..NewDocument::default() });
     d.swatches.push(Swatch::color("Brand Red", Color::rgb(0.9, 0.1, 0.1)));
     add_box(&mut d, Rect::new(36.0, 400.0, 136.0, 500.0), "Brand Red");
     let r = x4(&d);
-    assert_eq!(r.warnings, ["PDF/X-4: RGB fills or strokes on page 1: under a CMYK output intent RGB needs an ICC profile"]);
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    // The fill paints in CMYK, not RGB: no `rg` op may remain in the content.
+    let content = crate::tests::uncompressed(&d, PdfOptions { standard: Standard::PdfX4, compress: false, ..Default::default() });
+    assert!(!content.contains(" rg"), "{content}");
+    assert!(content.contains(" k"), "{content}");
 }
 
 /// A minimal PDF with a CMYK (N 4) PDF/X output intent and one page with `entries` (its

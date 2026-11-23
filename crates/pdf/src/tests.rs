@@ -22,7 +22,7 @@ fn add_box(d: &mut Document, r: Rect, swatch: &str) {
     d.insert_item(SpreadRef::Doc(0), b, None).unwrap();
 }
 
-fn uncompressed(d: &Document, opts: PdfOptions) -> String {
+pub(crate) fn uncompressed(d: &Document, opts: PdfOptions) -> String {
     let bytes = export_pdf(d, &Cache::new(), &PdfOptions { compress: false, ..opts }).expect("export");
     String::from_utf8_lossy(&bytes).into_owned()
 }

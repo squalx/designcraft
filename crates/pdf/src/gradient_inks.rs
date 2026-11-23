@@ -122,7 +122,7 @@ impl Exporter<'_> {
             }
             ([], _) => None,
             ([(name, alternate)], true) => {
-                Some(Space::Separation(SeparationSpace::new(SeparationColorant::Custom(name.clone()), regular(alternate, self.rgb_only))))
+                Some(Space::Separation(SeparationSpace::new(SeparationColorant::Custom(name.clone()), regular(alternate, self.rgb_only, self.to_cmyk))))
             }
             _ => {
                 if self.rgb_only {

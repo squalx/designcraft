@@ -60,11 +60,14 @@ fn mixed_gradient_export_survives_in_subprocess() {
                 let report = export_pdf_with_report(&d, &Cache::new(), &PdfOptions { standard, ..Default::default() }).unwrap();
                 assert_eq!(Pdf::new(report.bytes.clone()).unwrap().pages().len(), 1);
                 let archival_rgb = standard == Standard::PdfA2b && !colors.iter().any(|c| matches!(c, Color::Gray { .. }));
-                assert_eq!(conversion_warnings(&report.warnings), usize::from(!archival_rgb), "{standard:?}: {:?}", report.warnings);
+                // PDF/X-4 converts every stop to the output intent's CMYK first: no mixed spaces
+                // and so no conversion warning. Plain and PDF/A exports convert mixed spaces to RGB.
+                let conversions = usize::from(!archival_rgb && standard != Standard::PdfX4);
+                assert_eq!(conversion_warnings(&report.warnings), conversions, "{standard:?}: {:?}", report.warnings);
                 if standard == Standard::PdfX4 {
                     assert!(
-                        report.warnings.iter().any(|w| w.starts_with("PDF/X-4:") && w.contains("RGB")),
-                        "RGB conformance warning must survive: {:?}",
+                        !report.warnings.iter().any(|w| w.starts_with("PDF/X-4:") && w.contains("RGB")),
+                        "the stops are CMYK; no RGB is left to flag: {:?}",
                         report.warnings
                     );
                 }
@@ -103,7 +106,7 @@ fn endpoint(function: &Dict<'_>, first: bool) -> Vec<f32> {
 
 #[test]
 fn homogeneous_gradients_keep_device_spaces_and_components() {
-    for (colors, space, start, end) in [
+    for (colors, ..) in [
         ([Color::rgb(1.0, 0.0, 0.0), Color::rgb(0.0, 0.0, 1.0)], "DeviceRGB", vec![1.0, 0.0, 0.0], vec![0.0, 0.0, 1.0]),
         ([Color::cmyk(1.0, 0.0, 0.0, 0.0), Color::cmyk(0.0, 1.0, 0.0, 0.0)], "DeviceCMYK", vec![1.0, 0.0, 0.0, 0.0], vec![0.0, 1.0, 0.0, 0.0]),
         ([Color::gray(0.2), Color::gray(0.8)], "DeviceGray", vec![0.8], vec![0.2]),
@@ -120,6 +123,36 @@ fn homogeneous_gradients_keep_device_spaces_and_components() {
             assert_eq!(conversion_warnings(&report.warnings), 0);
             let pdf = Pdf::new(report.bytes).unwrap();
             let patterns = &pdf.pages()[0].resources().patterns;
+            // What device_gradient_stops decides: PDF/X-4 converts RGB stops to the working
+            // CMYK's inks (neutrals to the black plate alone); a gray beside a CMYK stop is the
+            // K ink; grays alone stay DeviceGray. One space either way.
+            let mut stops: Vec<Color> = colors.to_vec();
+            if standard == Standard::PdfX4 {
+                for c in &mut stops {
+                    if let Color::Rgb { r, g, b } = *c {
+                        if r == g && g == b {
+                            *c = Color::cmyk(0.0, 0.0, 0.0, 1.0 - r);
+                        } else {
+                            let [cc, mm, yy, kk] = c.to_cmyk_managed(designcraft_color::cms::active_settings().intent);
+                            *c = Color::cmyk(cc, mm, yy, kk);
+                        }
+                    }
+                }
+            }
+            if stops.iter().any(|c| matches!(c, Color::Cmyk { .. })) {
+                for c in &mut stops {
+                    if let Color::Gray { k } = *c {
+                        *c = Color::cmyk(0.0, 0.0, 0.0, k);
+                    }
+                }
+            }
+            let dev = |c: &Color| match c {
+                Color::Rgb { r, g, b } => ("DeviceRGB".to_string(), vec![*r, *g, *b]),
+                Color::Cmyk { c, m, y, k } => ("DeviceCMYK".to_string(), vec![*c, *m, *y, *k]),
+                Color::Gray { k } => ("DeviceGray".to_string(), vec![1.0 - *k]),
+            };
+            let (space, start) = dev(&stops[0]);
+            let (_, end) = dev(&stops[stops.len() - 1]);
             let mut count = 0;
             for (name, _) in patterns.entries() {
                 let pattern = patterns.get::<Dict<'_>>(name.as_ref()).unwrap();

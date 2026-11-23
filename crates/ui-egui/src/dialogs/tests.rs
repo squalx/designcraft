@@ -3762,6 +3762,7 @@ fn pdf_export_defaults() {
     // serde_json::Map keeps keys sorted.
     let expected = [
         "bleed",
+        "cmykProfile",
         "compressImages",
         "flatten",
         "marksBleed",

@@ -238,6 +238,9 @@ fn export_pdf_with_report_inner(doc: &Document, cache: &Cache, opts: &PdfOptions
         fonts: HashMap::new(),
         reverse_cmaps: HashMap::new(),
         rgb_only: archival.is_some(),
+        // A CMYK output intent (PDF/X): stray RGB fills print as the working CMYK's inks. Other
+        // exports keep every colour's own space (a screen PDF shows RGB as authored).
+        to_cmyk: opts.standard.is_pdfx(),
         tags: Vec::new(),
         story_tags: HashMap::new(),
         tag_story: None,

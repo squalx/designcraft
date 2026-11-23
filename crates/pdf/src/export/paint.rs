@@ -77,6 +77,15 @@ impl Exporter<'_> {
     /// A gradient's stops in device colors: CMYK, RGB or Gray, as one space.
     fn device_gradient_stops(&mut self, g: &designcraft_color::Gradient, swatch: &str) -> Vec<Stop> {
         let mut expanded = g.expanded_stops();
+        // Print colour: RGB stops become the working CMYK's inks first, so a gradient under a
+        // CMYK output intent never mixes spaces (an RGB stop beside a CMYK or gray one would).
+        if self.to_cmyk {
+            for (_, c, _) in &mut expanded {
+                if let Some(inks) = crate::export::common::print_inks(c, true) {
+                    *c = Color::cmyk(inks[0], inks[1], inks[2], inks[3]);
+                }
+            }
+        }
         // Gray and CMYK stops blend as inks, so a gray stop beside a CMYK one is the K ink.
         if !self.rgb_only && expanded.iter().any(|(_, c, _)| matches!(c, Color::Cmyk { .. })) {
             for (_, c, _) in &mut expanded {
@@ -107,7 +116,7 @@ impl Exporter<'_> {
             } else {
                 // Preserve RGB values, including already-interpolated display RGB, and
                 // leave every homogeneous gradient on its existing device-space path.
-                device(&c, self.rgb_only)
+                device(&c, self.rgb_only, self.to_cmyk)
             };
             stops.push(Stop { offset: norm(o), color, opacity: norm(a) });
         }

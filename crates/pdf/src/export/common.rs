@@ -32,24 +32,45 @@ pub(crate) fn q(v: f32) -> u8 {
     (v.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
-pub(crate) fn regular(c: &Color, rgb_only: bool) -> krilla::color::RegularColor {
+/// An RGB colour's print inks under a CMYK output intent: the working CMYK space's inks for a
+/// chromatic colour, the black plate alone for a neutral one (a neutral grey or black is never
+/// four-colour). `None` when `to_cmyk` is off, or `c` isn't RGB.
+pub(crate) fn print_inks(c: &Color, to_cmyk: bool) -> Option<[f32; 4]> {
+    let Color::Rgb { r, g, b } = *c else { return None };
+    if !to_cmyk {
+        return None;
+    }
+    Some(if r == g && g == b {
+        [0.0, 0.0, 0.0, 1.0 - r]
+    } else {
+        c.to_cmyk_managed(designcraft_color::cms::active_settings().intent)
+    })
+}
+
+pub(crate) fn regular(c: &Color, rgb_only: bool, to_cmyk: bool) -> krilla::color::RegularColor {
     use krilla::color::RegularColor as R;
     if rgb_only && matches!(c, Color::Cmyk { .. }) {
         let [r, g, b] = c.to_rgb();
         return R::Rgb(rgb::Color::new(q(r), q(g), q(b)));
     }
-    match *c {
-        Color::Rgb { r, g, b } => R::Rgb(rgb::Color::new(q(r), q(g), q(b))),
-        Color::Cmyk { c, m, y, k } => R::Cmyk(cmyk::Color::new(q(c), q(m), q(y), q(k))),
-        // DesignCraft grey is ink coverage (0 = white); PDF DeviceGray is lightness.
-        Color::Gray { k } => R::Luma(luma::Color::new(q(1.0 - k))),
+    // Print colour: an RGB colour becomes the working CMYK space's inks (the output intent names
+    // the press, and a stray RGB fill would shift under it).
+    match print_inks(c, to_cmyk) {
+        Some([c, m, y, k]) => R::Cmyk(cmyk::Color::new(q(c), q(m), q(y), q(k))),
+        None => match *c {
+            Color::Rgb { r, g, b } => R::Rgb(rgb::Color::new(q(r), q(g), q(b))),
+            Color::Cmyk { c, m, y, k } => R::Cmyk(cmyk::Color::new(q(c), q(m), q(y), q(k))),
+            // DesignCraft grey is ink coverage (0 = white); PDF DeviceGray is lightness.
+            Color::Gray { k } => R::Luma(luma::Color::new(q(1.0 - k))),
+        },
     }
 }
 
 /// A process colour in its own device space (CMYK → DeviceCMYK, RGB → DeviceRGB, Gray → DeviceGray).
-/// `rgb_only` converts CMYK to RGB (PDF/A without a CMYK output profile).
-pub(crate) fn device(c: &Color, rgb_only: bool) -> krilla::color::Color {
-    match regular(c, rgb_only) {
+/// `rgb_only` converts CMYK to RGB (PDF/A without a CMYK output profile); `to_cmyk` converts RGB
+/// to the working CMYK inks (a CMYK output intent).
+pub(crate) fn device(c: &Color, rgb_only: bool, to_cmyk: bool) -> krilla::color::Color {
+    match regular(c, rgb_only, to_cmyk) {
         krilla::color::RegularColor::Rgb(v) => v.into(),
         krilla::color::RegularColor::Cmyk(v) => v.into(),
         krilla::color::RegularColor::Luma(v) => v.into(),
@@ -59,7 +80,7 @@ pub(crate) fn device(c: &Color, rgb_only: bool) -> krilla::color::Color {
 /// `[Registration]` prints on every plate: `/Separation /All`.
 pub(crate) fn registration(tint: f32, rgb_only: bool) -> krilla::color::Color {
     use krilla::color::separation::{Color as SepColor, SeparationColorant, SeparationSpace};
-    let alt = regular(&Color::cmyk(1.0, 1.0, 1.0, 1.0), rgb_only);
+    let alt = regular(&Color::cmyk(1.0, 1.0, 1.0, 1.0), rgb_only, false);
     SepColor::new(q(tint), SeparationSpace::new(SeparationColorant::AllColorants, alt)).into()
 }
 
@@ -140,7 +161,7 @@ impl Exporter<'_> {
                 // [Paper] prints no ink (it knocks out what lies below); its colour is only what
                 // the screen shows. Written as RGB white (`1 1 1 rg`) it would put DeviceRGB in a
                 // CMYK print file.
-                SwatchValue::Paper { .. } if self.for_print() => return Some(device(&Color::cmyk(0.0, 0.0, 0.0, 0.0), self.rgb_only)),
+                SwatchValue::Paper { .. } if self.for_print() => return Some(device(&Color::cmyk(0.0, 0.0, 0.0, 0.0), self.rgb_only, self.to_cmyk)),
                 SwatchValue::Tint { base, tint: bt } => {
                     t *= bt;
                     n = base;
@@ -153,14 +174,14 @@ impl Exporter<'_> {
                         self.doc.swatch(ink).filter(|w| matches!(w.value, SwatchValue::Color { color_type: ColorType::Spot, .. })).unwrap_or(sw);
                     let SwatchValue::Color { color, .. } = &target.value else { break };
                     if process {
-                        return Some(device(&designcraft_color::swatch::apply_tint(*color, t), self.rgb_only));
+                        return Some(device(&designcraft_color::swatch::apply_tint(*color, t), self.rgb_only, self.to_cmyk));
                     }
-                    let space = SeparationSpace::new(SeparationColorant::Custom(target.name.clone()), regular(color, self.rgb_only));
+                    let space = SeparationSpace::new(SeparationColorant::Custom(target.name.clone()), regular(color, self.rgb_only, self.to_cmyk));
                     return Some(SepColor::new(q(t), space).into());
                 }
                 _ => break,
             }
         }
-        self.doc.resolve_color(name, tint).map(|c| device(&c, self.rgb_only))
+        self.doc.resolve_color(name, tint).map(|c| device(&c, self.rgb_only, self.to_cmyk))
     }
 }

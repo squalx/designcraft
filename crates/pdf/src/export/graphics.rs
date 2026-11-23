@@ -371,7 +371,7 @@ impl Exporter<'_> {
         s.push_transform(&tf(g.xf));
         if tone == designcraft_images::Tone::Gray {
             let blank =
-                self.swatch_color(designcraft_color::swatch::PAPER, 1.0).unwrap_or_else(|| device(&Color::cmyk(0.0, 0.0, 0.0, 0.0), self.rgb_only));
+                self.swatch_color(designcraft_color::swatch::PAPER, 1.0).unwrap_or_else(|| device(&Color::cmyk(0.0, 0.0, 0.0, 0.0), self.rgb_only, self.to_cmyk));
             s.set_fill(Some(Fill { paint: blank.into(), ..Default::default() }));
             s.draw_path(&rect);
         }
