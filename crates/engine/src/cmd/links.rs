@@ -33,7 +33,7 @@ use crate::{EngineError, Result, Session};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(query "links.list", "Links", [], None, "{} → [{asset, name, path, storage: linked|embedded (where a save keeps the bytes), status: ok|modified|missing|embedded|checking (a linked file still being hashed), refused?: why a missing link isn't followed (a path on another computer, a device), pixels, pdfCrop (placed PDFs: the box shown), color?: rgb|cmyk|indexed|bitmap|grayscale|lab (a raster image's file header reports it; linked files answer on the background check), uses: [{id, page, ppi}]}], then linked text files: [{story, name, path, status (also tooLarge: unchanged size, too big to check), edited (the story was changed in the layout), uses: [{id, page}]}]", has_doc, |s, _| {
+        cmd!(query "links.list", "Links", [], None, "{} → [{asset, name, path, storage: linked|embedded (where a save keeps the bytes), status: ok|modified|missing|embedded|checking (a linked file still being hashed), refused?: why a missing link isn't followed (a path on another computer, a device), pixels, pdfCrop (placed PDFs: the box shown), color?: rgb|cmyk|indexed|bitmap|grayscale|lab (a raster image's file header reports it; linked files answer on the background check), profile?: the image's own ICC profile's name (empty when it carries none; linked files answer on the background check), uses: [{id, page, ppi}]}], then linked text files: [{story, name, path, status (also tooLarge: unchanged size, too big to check), edited (the story was changed in the layout), uses: [{id, page}]}]", has_doc, |s, _| {
             // Taken out for the call so the document needn't be cloned on every poll.
             let mut checks = std::mem::take(&mut s.link_checks);
             let links = s.doc().map(|d| list(&d.doc, &s.cache, d.path.as_deref().map(Path::new), Some(&mut checks), None, Some(&d.links)).unwrap_or_default());
@@ -817,7 +817,8 @@ fn list(
                 Storage::Embedded => "embedded",
             };
             let color = color_space(a, allow_file);
-            Some(json!({"asset": a.id.0, "name": a.name, "path": a.link, "storage": storage, "status": status, "refused": why, "pixels": a.pixels, "pdfCrop": pdf_crop, "color": color, "uses": uses}))
+            let profile = icc_profile_name(a, allow_file);
+            Some(json!({"asset": a.id.0, "name": a.name, "path": a.link, "storage": storage, "status": status, "refused": why, "pixels": a.pixels, "pdfCrop": pdf_crop, "color": color, "profile": profile, "uses": uses}))
         })
         .chain(texts)
         .collect()
@@ -846,6 +847,25 @@ fn color_space(a: &Asset, allow_file: bool) -> Option<&'static str> {
         RasterColorType::Lab => "Lab",
         RasterColorType::Other => "?",
     })
+}
+
+/// The name of the ICC profile a placed image carries (its colour management contract with the
+/// press), for the Links panel. An untagged file is `Some("")` (nothing to verify it against);
+/// vector files and unreadable bytes are `None`.
+fn icc_profile_name(a: &Asset, allow_file: bool) -> Option<String> {
+    if a.mime == "application/pdf" || a.mime == "image/svg+xml" {
+        return None;
+    }
+    let bytes = match a.data.embedded_bytes() {
+        Some(bytes) => std::sync::Arc::clone(bytes),
+        None if allow_file => a.data.load().ok()?,
+        None => return None,
+    };
+    let Some(icc) = designcraft_images::embedded_icc_profile(&bytes) else {
+        // Untagged: the file carries no profile (the export names one for it, sRGB under PDF/X).
+        return Some(String::new());
+    };
+    Some(designcraft_color::cms::icc::IccProfile::from_bytes(None, &icc).map(|p| p.name).unwrap_or_else(|_| "?".into()))
 }
 
 /// A linked text file's bytes, with its size and time from before they were read.

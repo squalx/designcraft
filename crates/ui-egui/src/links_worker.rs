@@ -204,12 +204,16 @@ fn with_statuses(document: &[Value], checked: Option<&[Value]>) -> Vec<Value> {
                 && let Some(checked) = found.get(&link(&row))
             {
                 // The header of a linked raster file is read on the worker thread: a preview row
-                // has no colour of its own yet.
+                // has no colour or profile of its own yet.
                 let color = row.get("color").filter(|c| c.is_null()).and_then(|_| checked.get("color")).filter(|c| !c.is_null()).cloned();
+                let profile = row.get("profile").filter(|p| p.is_null()).and_then(|_| checked.get("profile")).filter(|p| !p.is_null()).cloned();
                 if let Some(fields) = row.as_object_mut() {
                     fields.insert("status".into(), checked["status"].clone());
                     if let Some(color) = color {
                         fields.insert("color".into(), color);
+                    }
+                    if let Some(profile) = profile {
+                        fields.insert("profile".into(), profile);
                     }
                 }
             }

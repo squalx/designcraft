@@ -632,6 +632,16 @@ pub fn decode_cmyk_psd(bytes: &[u8]) -> Option<CmykRaster> {
     psd::decode_cmyk(bytes)
 }
 
+/// The ICC profile bytes a raster file carries: the header's profile (PNG, JPEG, TIFF, WebP…),
+/// or a PSD's 1039 resource. `None` when the file is untagged, or not a raster at all.
+pub fn embedded_icc_profile(bytes: &[u8]) -> Option<Vec<u8>> {
+    if is_psd(bytes) {
+        let (file, _) = craft_psd::PsdFile::from_bytes_salvaging(bytes).ok()?;
+        return file.icc_profile().map(<[u8]>::to_vec);
+    }
+    craft_image_codecs::embedded_icc(bytes).ok().flatten()
+}
+
 /// An SVG rasterised so its longer side is `max_side` pixels: premultiplied RGBA8.
 pub fn render_svg(bytes: &[u8], max_side: u32) -> Option<(Vec<u8>, u32, u32)> {    let tree = svg_tree(bytes)?;
     let s = tree.size();

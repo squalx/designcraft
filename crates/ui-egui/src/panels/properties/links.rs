@@ -164,16 +164,38 @@ pub fn links_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
                 _ => ("OK", egui::Color32::from_rgb(60, 200, 90)),
             };
             let status = ui
-                .horizontal(|ui| {
-                    if !storage.is_empty() {
-                        storage_icon(ui, storage == "linked", t.text_dim, &app.ui.language);
+                .vertical(|ui| {
+                    let badges = ui
+                        .horizontal(|ui| {
+                            if !storage.is_empty() {
+                                storage_icon(ui, storage == "linked", t.text_dim, &app.ui.language);
+                            }
+                            let mut status = badge(ui, crate::i18n::tr(&app.ui.language, txt), col);
+                            // The colour model the file's own header reports (a placed PDF or SVG has none).
+                            if let Some(c) = r["color"].as_str() {
+                                status = status.union(badge(ui, crate::i18n::tr(&app.ui.language, c), t.text_dim));
+                            }
+                            status
+                        })
+                        .inner;
+                    // The ICC profile the image carries: the contract the press verifies. An empty
+                    // one is an untagged file (the export names a profile for it).
+                    let profile = match r["profile"].as_str() {
+                        Some("") => Some(crate::i18n::tr(&app.ui.language, "no profile")),
+                        Some(p) => Some(crate::i18n::tr(&app.ui.language, p)),
+                        None => None,
+                    };
+                    if let Some(profile) = profile {
+                        badges.union(
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(profile).color(t.text_dim).size(10.0))
+                                    .truncate()
+                                    .sense(Sense::hover()),
+                            )
+                            .on_hover_text(profile),
+                        );
                     }
-                    let mut status = badge(ui, crate::i18n::tr(&app.ui.language, txt), col);
-                    // The colour model the file's own header reports (a placed PDF or SVG has none).
-                    if let Some(c) = r["color"].as_str() {
-                        status = status.union(badge(ui, crate::i18n::tr(&app.ui.language, c), t.text_dim));
-                    }
-                    status
+                    badges
                 })
                 .inner;
             // Why a link isn't followed (a path on another computer, a device).
@@ -326,7 +348,7 @@ fn open_default(path: &str) -> Result<(), std::io::Error> {
     std::process::Command::new(program).arg(arg).spawn().map(|_| ())
 }
 /// A row's height: the name and the path under it, with room around both.
-const ROW_H: f32 = 46.0;
+const ROW_H: f32 = 48.0;
 /// The fixed footer's room: the source path, the row's actions and Relink to Folder.
 const FOOTER_H: f32 = 96.0;
 
