@@ -267,3 +267,17 @@ fn loads_system_cmyk_icc() {
     assert!(de(rgb, back) < 5.0, "{back:?}");
     assert_eq!(c.cmyk_to_srgb([0.0; 4], false).map(|v| (v * 255.0).round() as u8), [255, 255, 255]);
 }
+
+#[test]
+fn known_standard_profiles_name_their_registered_condition() {
+    use super::registered_condition as r;
+    assert_eq!(r("Coated GRACoL 2006 (ISO 12647-2:2004)"), Some("GRACoL2006_Coated1"));
+    assert_eq!(r("CGATS21-2-CRPC6"), Some("CGATS21-2"));
+    assert_eq!(r("GRACoL2013_Coated"), Some("CGATS21-2"));
+    assert_eq!(r("ISO Coated v2 300% (ECI)"), Some("ISOcoated_v2_300_eci"));
+    assert_eq!(r("ISO Coated v2 (ECI)"), Some("ISOcoated_v2_eci"));
+    assert_eq!(r("Coated FOGRA39 (fitted, craft-cms)"), Some("FOGRA39"));
+    assert_eq!(r("PSO Coated v3 (FOGRA51)"), Some("FOGRA51"));
+    assert_eq!(r("SWOP2006_Coated3"), Some("SWOP2006_Coated3"));
+    assert_eq!(r("My shop's custom press profile"), None);
+}

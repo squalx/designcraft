@@ -155,6 +155,42 @@ impl ColorSettings {
     }
 }
 
+/// The ICC Characterization Data Registry name of a profile's printing condition, when the
+/// profile's name is a known standard one. A PDF/X output intent then names that registered
+/// characterisation (with the color.org registry) instead of `Custom`, so a preflight reads
+/// what press condition the file declares. Matched on the profile's description, which names
+/// the dataset: Adobe's `Coated GRACoL 2006 (ISO 12647-2:2004)`, Idealliance's
+/// `CGATS21-2-CRPC6` (GRACoL2013), ECI's `PSO …` and so on.
+fn registered_condition(name: &str) -> Option<&'static str> {
+    let n = name.to_ascii_lowercase();
+    // The CRPC datasets' registered condition is CGATS21-2 (CRPC6 is GRACoL2013).
+    if n.contains("cgats21") || n.contains("crpc") || n.contains("gracol2013") || n.contains("gracol 2013") {
+        return Some("CGATS21-2");
+    }
+    if n.contains("gracol") {
+        return Some("GRACoL2006_Coated1");
+    }
+    if n.contains("fogra51") || n.contains("pso coated v3") {
+        return Some("FOGRA51");
+    }
+    if n.contains("fogra52") || n.contains("pso uncoated v3") {
+        return Some("FOGRA52");
+    }
+    if n.contains("iso coated v2 300") || n.contains("isocoated_v2_300") {
+        return Some("ISOcoated_v2_300_eci");
+    }
+    if n.contains("iso coated v2") || n.contains("isocoated_v2") {
+        return Some("ISOcoated_v2_eci");
+    }
+    if n.contains("fogra39") {
+        return Some("FOGRA39");
+    }
+    if n.contains("swop2006") || n.contains("swop 2006") {
+        return Some(if n.contains("coated3") { "SWOP2006_Coated3" } else { "SWOP2006_Coated5" });
+    }
+    None
+}
+
 /// A PDF/X output intent: the destination profile and the condition it names.
 #[derive(Clone, Debug)]
 pub struct OutputIntent {
@@ -335,7 +371,11 @@ impl Cms {
             CmykSpace::Icc(p) if p.name == COATED_FOGRA39 => {
                 OutputIntent { icc: Cow::Borrowed(craft_cms::builtin::COATED_FOGRA39_ICC), identifier: "FOGRA39", condition: COATED_FOGRA39.into() }
             }
-            CmykSpace::Icc(p) => OutputIntent { icc: Cow::Owned(p.profile().to_bytes().to_vec()), identifier: "Custom", condition: p.name.clone() },
+            CmykSpace::Icc(p) => OutputIntent {
+                icc: Cow::Owned(p.profile().to_bytes().to_vec()),
+                identifier: registered_condition(&p.name).unwrap_or("Custom"),
+                condition: p.name.clone(),
+            },
             CmykSpace::Generic(_) | CmykSpace::Device => {
                 OutputIntent { icc: Cow::Borrowed(icc_out::generic_cmyk_icc()?), identifier: "Custom", condition: GENERIC_CMYK.into() }
             }
