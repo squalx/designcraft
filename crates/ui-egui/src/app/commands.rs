@@ -66,6 +66,13 @@ impl DesignApp {
             }
             // Find Next brings the text it found into view, on whichever page its frame is.
             Ok(v) if id == "find.next" && !v.is_null() => self.show_found_text(),
+            // Go To Link brings the frame the graphic shows in into view, as Find Next does.
+            Ok(v) if id == "links.goTo" && !v.is_null() => {
+                let first = v["ids"].as_array().and_then(|ids| ids.first()).and_then(Value::as_u64);
+                if let Some(id) = first {
+                    canvas::go_to_item(self, designcraft_doc::ItemId(id));
+                }
+            }
             Ok(_) => {}
         }
         if r.is_ok() && matches!(id, "file.open" | "file.openIdml" | "file.openBytes") {

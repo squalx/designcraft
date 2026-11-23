@@ -261,6 +261,40 @@ fn links_panel_distinguishes_same_named_sources_and_keeps_link_actions() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Go To Link brings the frame the graphic shows in into view, as Find Next does.
+#[test]
+fn links_go_to_brings_the_graphic_into_view() {
+    use designcraft_doc::{Content, Graphic};
+    let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+    app.run("file.new", json!({"preset": "A4", "pages": 5, "facingPages": false})).unwrap();
+    app.canvas_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 800.0)));
+    let id = designcraft_doc::ItemId(app.run("frame.create", json!({"spread": 4, "rect": [72, 72, 300, 200]})).unwrap()["id"].as_u64().unwrap());
+    let doc = std::sync::Arc::make_mut(&mut app.session.doc_mut().unwrap().doc);
+    let aid = designcraft_doc::AssetId(doc.alloc());
+    doc.assets.insert(
+        aid,
+        std::sync::Arc::new(designcraft_doc::Asset { id: aid, name: "photo.svg".into(), mime: "image/svg+xml".into(), data: designcraft_doc::AssetData::embedded(SVG.to_vec()), pixels: Some((32, 32)), ..Default::default() }),
+    );
+    doc.item_mut(id).unwrap().content = Content::Graphic(Graphic {
+        layer_options: None,
+        asset: aid,
+        size: (72.0, 72.0),
+        xf: designcraft_geom::Affine::IDENTITY,
+        clip: None,
+        auto_fit: Default::default(),
+        fit_align: 4,
+        crop: [0.0; 4],
+        wrap: Default::default(),
+        fill: Default::default(),
+    });
+    app.run("selection.set", json!({"ids": []})).unwrap();
+    crate::canvas::go_to_page(&mut app, 0);
+    let spread = |app: &DesignApp| crate::canvas::view_centre(app).map(|(s, _)| s);
+    assert_eq!(spread(&app), Some(designcraft_doc::SpreadRef::Doc(0)));
+    app.run("links.goTo", json!({"asset": aid.0})).unwrap();
+    assert_eq!(spread(&app), Some(designcraft_doc::SpreadRef::Doc(4)), "the view went to the page with the graphic");
+}
+
 #[test]
 fn links_panel_keeps_long_source_paths_inside_a_narrow_panel() {
     let path = "/project/assets/studio-a/very-long-folder-name/another-long-folder-name/photo.svg";
