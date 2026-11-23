@@ -14,6 +14,7 @@ testing = []
 
 [dependencies]
 craft-mime = { workspace = true }
+craft-image-codecs = { workspace = true }
 craft-print = { workspace = true }
 craft-docpath = { workspace = true }
 designcraft-images = { workspace = true }

@@ -21,6 +21,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use designcraft_compose::Cache;
+use craft_image_codecs::RasterColorType;
 use designcraft_doc::{
     Asset, AssetData, AssetId, Content, Document, Fingerprint, Item, ItemId, LinkedSource, Selection, Storage, Story, StoryId, TextFileLink,
 };
@@ -32,7 +33,7 @@ use crate::{EngineError, Result, Session};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(query "links.list", "Links", [], None, "{} → [{asset, name, path, storage: linked|embedded (where a save keeps the bytes), status: ok|modified|missing|embedded|checking (a linked file still being hashed), refused?: why a missing link isn't followed (a path on another computer, a device), pixels, pdfCrop (placed PDFs: the box shown), uses: [{id, page, ppi}]}], then linked text files: [{story, name, path, status (also tooLarge: unchanged size, too big to check), edited (the story was changed in the layout), uses: [{id, page}]}]", has_doc, |s, _| {
+        cmd!(query "links.list", "Links", [], None, "{} → [{asset, name, path, storage: linked|embedded (where a save keeps the bytes), status: ok|modified|missing|embedded|checking (a linked file still being hashed), refused?: why a missing link isn't followed (a path on another computer, a device), pixels, pdfCrop (placed PDFs: the box shown), color?: rgb|cmyk|indexed|bitmap|grayscale|lab (a raster image's file header reports it; linked files answer on the background check), uses: [{id, page, ppi}]}], then linked text files: [{story, name, path, status (also tooLarge: unchanged size, too big to check), edited (the story was changed in the layout), uses: [{id, page}]}]", has_doc, |s, _| {
             // Taken out for the call so the document needn't be cloned on every poll.
             let mut checks = std::mem::take(&mut s.link_checks);
             let links = s.doc().map(|d| list(&d.doc, &s.cache, d.path.as_deref().map(Path::new), Some(&mut checks), None, Some(&d.links)).unwrap_or_default());
@@ -747,6 +748,8 @@ fn list(
     open: Option<&super::native_links::OpenLinks>,
 ) -> Option<Vec<Value>> {
     let stopped = || stop.is_some_and(|stop| stop.load(Ordering::Relaxed));
+    // Colour headers of linked files are read only on a caller that is allowed to block.
+    let allow_file = files.is_some();
     let (mut checks, mut images, mut verified) = match files {
         Some(files) => {
             files.verified.clear();
@@ -813,10 +816,36 @@ fn list(
                 Storage::Linked => "linked",
                 Storage::Embedded => "embedded",
             };
-            Some(json!({"asset": a.id.0, "name": a.name, "path": a.link, "storage": storage, "status": status, "refused": why, "pixels": a.pixels, "pdfCrop": pdf_crop, "uses": uses}))
+            let color = color_space(a, allow_file);
+            Some(json!({"asset": a.id.0, "name": a.name, "path": a.link, "storage": storage, "status": status, "refused": why, "pixels": a.pixels, "pdfCrop": pdf_crop, "color": color, "uses": uses}))
         })
         .chain(texts)
         .collect()
+}
+
+/// The colour model a placed image's file header reports (Links panel): RGB, CMYK, … Placed PDFs
+/// and SVGs are vector and have none. Only embedded bytes are read unless `allow_file` names a
+/// caller on a background thread: a linked file may sit on a share that doesn't answer, and the
+/// header is not worth stalling the UI for.
+fn color_space(a: &Asset, allow_file: bool) -> Option<&'static str> {
+    if a.mime == "application/pdf" || a.mime == "image/svg+xml" {
+        return None;
+    }
+    let bytes = match a.data.embedded_bytes() {
+        Some(bytes) => std::sync::Arc::clone(bytes),
+        None if allow_file => a.data.load().ok()?,
+        None => return None,
+    };
+    let color = craft_image_codecs::inspect_raster(&bytes).ok()??.color_type;
+    Some(match color {
+        RasterColorType::Bitmap => "Bitmap",
+        RasterColorType::Gray | RasterColorType::GrayAlpha => "Grayscale",
+        RasterColorType::Indexed => "Indexed",
+        RasterColorType::Rgb | RasterColorType::Rgba => "RGB",
+        RasterColorType::Cmyk | RasterColorType::CmykAlpha => "CMYK",
+        RasterColorType::Lab => "Lab",
+        RasterColorType::Other => "?",
+    })
 }
 
 /// A linked text file's bytes, with its size and time from before they were read.

@@ -212,6 +212,8 @@ fn preview_rows_look_at_no_file() {
             .map(|mut row| {
                 if let Some(row) = row.as_object_mut() {
                     row.remove("status");
+                    // The colour header of a linked file is another thing only the check reads.
+                    row.remove("color");
                 }
                 row
             })
