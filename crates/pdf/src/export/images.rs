@@ -17,7 +17,7 @@ pub(super) struct ConvertedImage {
     pub(super) warning: Option<&'static str>,
 }
 
-pub(super) const CMYK_FALLBACK_WARNING: &str = "converted to RGB (a CMYK TIFF that uses other inks or is over 256 MiB)";
+pub(super) const CMYK_FALLBACK_WARNING: &str = "converted to RGB (a CMYK TIFF or PSD that uses other inks or is over 256 MiB)";
 
 #[cfg(not(test))]
 pub(super) type ImageContentCache = HashMap<Arc<Vec<u8>>, ConvertedImage>;
@@ -151,6 +151,17 @@ pub(super) struct CmykImage(pub(super) Arc<designcraft_images::CmykRaster>);
 pub(super) fn cmyk_tiff(data: &[u8], mode: RasterMode) -> Option<Image> {
     let r = designcraft_images::decode_cmyk_tiff(data)?;
     // krilla panics when the channel lengths don't match the size.
+    let pixels = usize::try_from(r.width).ok()?.checked_mul(usize::try_from(r.height).ok()?)?;
+    if r.cmyk.len() != pixels.checked_mul(4)? || r.alpha.as_ref().is_some_and(|a| a.len() != pixels) {
+        return None;
+    }
+    Image::from_custom(CmykImage(Arc::new(r)), mode.interpolate).ok()
+}
+
+/// A CMYK PSD as a DeviceCMYK image, its ink values unchanged. `None` when it can't be read as
+/// CMYK.
+pub(super) fn cmyk_psd(data: &[u8], mode: RasterMode) -> Option<Image> {
+    let r = designcraft_images::decode_cmyk_psd(data)?;
     let pixels = usize::try_from(r.width).ok()?.checked_mul(usize::try_from(r.height).ok()?)?;
     if r.cmyk.len() != pixels.checked_mul(4)? || r.alpha.as_ref().is_some_and(|a| a.len() != pixels) {
         return None;
@@ -358,6 +369,27 @@ mod image_content_cache_tests {
             assert!(ex.load_image(b).is_some());
             assert_eq!(ex.image_conversions, 1);
             assert_eq!(ex.images_by_content.len(), 1);
+        }
+    }
+
+    #[test]
+    fn a_cmyk_psd_keeps_its_inks_as_device_cmyk() {
+        let bytes = crate::image_fixtures::cmyk_psd();
+        assert!(designcraft_images::is_cmyk_psd(&bytes));
+        // Straight inks out of the decode: 100% K, then full CMY, no alpha.
+        let r = designcraft_images::decode_cmyk_psd(&bytes).unwrap();
+        assert_eq!(r.cmyk, crate::image_fixtures::INKS.to_vec());
+        assert!(r.alpha.is_none());
+        let mut d = Document::new(&Default::default());
+        let a = asset(&mut d, bytes, "ink.psd");
+        for compress_images in [false, true] {
+            let cache = Cache::new();
+            let opts = PdfOptions { compress_images, ..Default::default() };
+            let mut ex = exporter(&d, &cache, &opts);
+            let (space, samples) = image_color_samples(ex.load_image(a).unwrap());
+            assert_eq!(space, "DeviceCMYK", "{compress_images}");
+            assert_eq!(samples, crate::image_fixtures::INKS.to_vec(), "{compress_images}");
+            assert!(ex.warnings.is_empty(), "{compress_images}");
         }
     }
 

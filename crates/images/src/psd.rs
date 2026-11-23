@@ -29,6 +29,21 @@ pub(crate) fn decode(bytes: &[u8]) -> Option<image::RgbaImage> {
     }
 }
 
+/// The merged composite's CMYK inks, unchanged, for PDF export: a CMYK PSD placed in a document
+/// keeps its ink values as DeviceCMYK, like a CMYK TIFF does, instead of converting to RGB.
+pub(crate) fn decode_cmyk(bytes: &[u8]) -> Option<CmykRaster> {
+    let (file, _) = craft_psd::PsdFile::from_bytes_salvaging(bytes).ok()?;
+    if file.header.color_mode != ColorMode::Cmyk {
+        return None;
+    }
+    let pixels = usize::try_from(file.header.width).ok()?.checked_mul(usize::try_from(file.header.height).ok()?)?;
+    // The same room a display decode allows: five channels' worth (CMYK with an alpha plane).
+    if u64::try_from(pixels).ok()?.checked_mul(5)? > MAX_RGBA_BYTES {
+        return None;
+    }
+    cmyk(&file, pixels)
+}
+
 fn cmyk(file: &craft_psd::PsdFile, pixels: usize) -> Option<CmykRaster> {
     let header = &file.header;
     if !matches!(header.depth, 8 | 16) || header.channels < 4 {

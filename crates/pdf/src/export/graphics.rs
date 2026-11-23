@@ -1,5 +1,5 @@
 use super::common::{device, tf, to_path};
-use super::images::{CMYK_FALLBACK_WARNING, ConvertedImage, RasterMode, cmyk_tiff, embedded_icc, jpeg, lossless, recompress};
+use super::images::{CMYK_FALLBACK_WARNING, ConvertedImage, RasterMode, cmyk_psd, cmyk_tiff, embedded_icc, jpeg, lossless, recompress};
 use super::pipeline::{relabel_catalog_version, relabel_pdf_header};
 use super::*;
 
@@ -135,6 +135,17 @@ impl Exporter<'_> {
             // A CMYK TIFF keeps its ink values (`image` decodes it to RGB, and 100% K would print
             // as four-colour black). PDF/A exports are RGB only.
             Some(craft_image_codecs::Format::Tiff) if !self.rgb_only && designcraft_images::is_cmyk_tiff(&data) => match cmyk_tiff(&data, mode) {
+                Some(img) => Some(img),
+                None => {
+                    warning = Some(CMYK_FALLBACK_WARNING);
+                    self.warn(format!("{}: {CMYK_FALLBACK_WARNING}", asset.name));
+                    lossless(&data, fmt, mode)
+                }
+            },
+            // A CMYK PSD keeps its ink values too (its decode converts them to display RGB, and
+            // 100% K would print as four-colour black). Before the recompress arm: compressing
+            // an image must not convert its inks to RGB.
+            _ if !self.rgb_only && designcraft_images::is_cmyk_psd(&data) => match cmyk_psd(&data, mode) {
                 Some(img) => Some(img),
                 None => {
                     warning = Some(CMYK_FALLBACK_WARNING);

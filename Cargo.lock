@@ -2041,6 +2041,7 @@ dependencies = [
  "craft-image-codecs",
  "craft-pdf",
  "craft-prepress",
+ "craft-psd",
  "designcraft-color",
  "designcraft-compose",
  "designcraft-doc",

@@ -23,3 +23,11 @@ pub fn cmyk_tiff(alpha: Option<u16>, other_inks: bool) -> Vec<u8> {
     }
     bytes
 }
+
+/// A CMYK PSD (2×1): pixel 0 is 100% K, pixel 1 full CMY; no alpha. Straight inks in (0 = no
+/// ink); the builder stores them inverted as Photoshop does, so a decode gives `INKS` back.
+pub fn cmyk_psd() -> Vec<u8> {
+    use craft_psd::{Compression, PixelData, PsdBuilder, header::ColorMode};
+    let pixels = PixelData::Cmyka8(vec![0, 0, 0, 255, 255, 0, 255, 255, 0, 255]);
+    PsdBuilder::new(2, 1).color_mode(ColorMode::Cmyk).compression(Compression::Raw).composite(pixels).build().unwrap().to_bytes().unwrap()
+}

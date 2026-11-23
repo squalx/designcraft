@@ -616,9 +616,24 @@ pub fn decode_cmyk_tiff(bytes: &[u8]) -> Option<CmykRaster> {
     image.layout().is_cmyk().then(|| cmyk_raster(&image)).flatten()
 }
 
+/// Whether a PSD's pixels are CMYK (Photoshop's colour mode 4).
+pub fn is_cmyk_psd(bytes: &[u8]) -> bool {
+    craft_psd::PsdFile::from_bytes_salvaging(bytes).is_ok_and(|(file, _)| file.header.color_mode == craft_psd::header::ColorMode::Cmyk)
+}
+
+/// The ink values of a CMYK PSD, which [`decode_rgba`] converts to the display's RGB. The merged
+/// composite's CMYK(A), 8- or 16-bit, over the same size cap a display decode allows. `None` for
+/// anything else — another colour mode, or a file over the cap; [`is_cmyk_psd`] tells those
+/// apart from RGB files.
+pub fn decode_cmyk_psd(bytes: &[u8]) -> Option<CmykRaster> {
+    if too_large_to_decode(bytes) {
+        return None;
+    }
+    psd::decode_cmyk(bytes)
+}
+
 /// An SVG rasterised so its longer side is `max_side` pixels: premultiplied RGBA8.
-pub fn render_svg(bytes: &[u8], max_side: u32) -> Option<(Vec<u8>, u32, u32)> {
-    let tree = svg_tree(bytes)?;
+pub fn render_svg(bytes: &[u8], max_side: u32) -> Option<(Vec<u8>, u32, u32)> {    let tree = svg_tree(bytes)?;
     let s = tree.size();
     let k = max_side as f32 / s.width().max(s.height()).max(1e-3);
     let (w, h) = ((s.width() * k).round().max(1.0) as u32, (s.height() * k).round().max(1.0) as u32);
