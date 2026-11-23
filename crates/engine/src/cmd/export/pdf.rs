@@ -71,6 +71,7 @@ pub(crate) fn options(p: &Value, page_count: usize) -> Result<PdfOptions> {
         marks,
         standard,
         compress_images: p.get("compressImages").and_then(Value::as_bool).unwrap_or(false),
+        cmyk_profile: str_param(p, "cmykProfile").map(str::to_string),
         title: str_param(p, "title").map(str::to_string),
         author: str_param(p, "author").map(str::to_string),
         tagged: p.get("tagged").and_then(Value::as_bool).unwrap_or(false),

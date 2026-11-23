@@ -134,6 +134,10 @@ pub struct PdfOptions {
     /// Re-encode non-JPEG raster images as JPEG (quality 90) when they have no transparency.
     /// Off = lossless (JPEG data is always passed through unchanged).
     pub compress_images: bool,
+    /// The CMYK space the export works in and names in a PDF/X output intent: a profile name
+    /// [`designcraft_color::cms`] knows (built-in, or loaded in Color Settings). `None` = the
+    /// active colour settings' CMYK space.
+    pub cmyk_profile: Option<String>,
     /// Flate-compress content streams.
     pub compress: bool,
     /// Title for the metadata; `None` = the document title.
@@ -174,6 +178,7 @@ impl Default for PdfOptions {
             marks: Marks::NONE,
             standard: Standard::None,
             compress_images: false,
+            cmyk_profile: None,
             compress: true,
             title: None,
             author: None,

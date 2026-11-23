@@ -187,8 +187,18 @@ fn export_pdf_with_report_inner(doc: &Document, cache: &Cache, opts: &PdfOptions
     let configuration = write::configuration(version, archival)?;
     let mut warnings = Vec::new();
     let (base, cmyk_icc) = if print_color(doc, opts) {
-        // An output intent only for PDF/X, as in InDesign.
-        let (settings, icc, warning) = crate::pdfx::print_settings_and_profile(opts.standard.is_pdfx())?;
+        // An output intent only for PDF/X, as in InDesign. The export's own CMYK space (the
+        // dialog's profile) stands in for the active colour settings' when it names one.
+        let cms = match &opts.cmyk_profile {
+            Some(name) => {
+                let mut s = designcraft_color::cms::active_settings();
+                s.cmyk = name.clone();
+                Some(designcraft_color::cms::Cms::new(&s))
+            }
+            None => None,
+        };
+        let cms = cms.and_then(|c| c.ok()).unwrap_or_else(|| (*designcraft_color::cms::active()).clone());
+        let (settings, icc, warning) = crate::pdfx::print_settings_and_profile_with(&cms, opts.standard.is_pdfx())?;
         warnings.extend(warning);
         let pdfx_version = (opts.standard == Standard::PdfX4).then(|| "PDF/X-4".to_string());
         (krilla::SerializeSettings { pdfx_version, ..settings }, Some(icc))

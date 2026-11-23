@@ -141,6 +141,9 @@ pub struct PdfExportSettings {
     pub marks_offset: String,
     /// File › Export PDF › Advanced › Tagged PDF.
     pub tagged: bool,
+    /// Advanced › CMYK Profile: the CMYK space the export works in and names in a PDF/X output
+    /// intent. Empty = the colour settings' CMYK space.
+    pub cmyk_profile: String,
 }
 
 impl Default for PdfExportSettings {
@@ -149,6 +152,7 @@ impl Default for PdfExportSettings {
             preset: "Desktop Printing".into(),
             standard: "none".into(),
             compress_images: false,
+            cmyk_profile: String::new(),
             flatten: "".into(),
             spreads: false,
             bleed: true,
